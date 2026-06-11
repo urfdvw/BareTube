@@ -1,18 +1,29 @@
 import type { Channel, QuotaInfo, Settings } from './types';
 
 const KEYS = {
-  API_KEY: 'bt_apiKey',
   SUBSCRIPTIONS: 'bt_subscriptions',
   QUOTA: 'bt_quota',
   SETTINGS: 'bt_settings',
 } as const;
 
-// API Key
+// Settings (includes apiKey)
+export function getSettings(): Settings {
+  try {
+    return { apiKey: '', ...JSON.parse(localStorage.getItem(KEYS.SETTINGS) ?? '{}') };
+  } catch {
+    return { apiKey: '' };
+  }
+}
+export function setSettings(s: Settings): void {
+  localStorage.setItem(KEYS.SETTINGS, JSON.stringify(s));
+}
+
+// API Key — convenience wrappers backed by settings
 export function getApiKey(): string {
-  return localStorage.getItem(KEYS.API_KEY) ?? '';
+  return getSettings().apiKey.trim();
 }
 export function setApiKey(key: string): void {
-  localStorage.setItem(KEYS.API_KEY, key);
+  setSettings({ ...getSettings(), apiKey: key });
 }
 
 // Subscriptions
@@ -63,18 +74,6 @@ export function resetQuota(): void {
   localStorage.setItem(KEYS.QUOTA, JSON.stringify({ date: today(), unitsUsed: 0 }));
 }
 
-// Settings
-export function getSettings(): Settings {
-  try {
-    return JSON.parse(localStorage.getItem(KEYS.SETTINGS) ?? '{}');
-  } catch {
-    return { apiKey: '' };
-  }
-}
-export function setSettings(s: Settings): void {
-  localStorage.setItem(KEYS.SETTINGS, JSON.stringify(s));
-}
-
 // Export / Import
 export function exportData(): string {
   return JSON.stringify({
@@ -85,6 +84,5 @@ export function exportData(): string {
 export function importData(json: string): void {
   const data = JSON.parse(json);
   if (Array.isArray(data.subscriptions)) setSubscriptions(data.subscriptions);
-  if (data.settings && typeof data.settings === 'object') setSettings(data.settings);
-  if (data.settings?.apiKey) setApiKey(data.settings.apiKey);
+  if (data.settings && typeof data.settings === 'object') setSettings({ apiKey: '', ...data.settings });
 }

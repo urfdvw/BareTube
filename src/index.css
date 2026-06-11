@@ -416,13 +416,6 @@ html, body, #root {
 }
 .key-input:focus { border-color: var(--accent); }
 
-.save-btn {
-  background: var(--accent);
-  border: none; border-radius: var(--radius);
-  color: #fff; font-size: 13px; font-weight: 600;
-  padding: 8px 20px; cursor: pointer;
-}
-.save-btn:hover { background: var(--accent2); }
 
 .secondary-btn {
   background: var(--bg3);

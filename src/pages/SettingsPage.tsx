@@ -7,15 +7,13 @@ import QuotaIndicator from '../components/QuotaIndicator';
 export default function SettingsPage() {
   const navigate = useNavigate();
   const [key, setKey] = useState(getApiKey);
-  const [saved, setSaved] = useState(false);
   const [importError, setImportError] = useState('');
   const [quotaRefresh, setQuotaRefresh] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  function saveKey() {
-    setApiKey(key.trim());
-    setSaved(true);
-    setTimeout(() => setSaved(false), 1500);
+  function handleKeyChange(value: string) {
+    setKey(value);
+    setApiKey(value);
   }
 
   function handleExport() {
@@ -63,13 +61,10 @@ export default function SettingsPage() {
           type="password"
           className="key-input"
           value={key}
-          onChange={(e) => setKey(e.target.value)}
+          onChange={(e) => handleKeyChange(e.target.value)}
           placeholder="AIza..."
           autoComplete="off"
         />
-        <button className="save-btn" onClick={saveKey}>
-          {saved ? 'Saved!' : 'Save Key'}
-        </button>
       </section>
 
       <section className="settings-section">
