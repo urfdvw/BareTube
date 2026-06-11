@@ -387,11 +387,20 @@ html, body, #root {
 
 .player-info { padding: 10px 12px 80px; }
 .player-title { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
-.player-channel {
-  font-size: 13px; color: var(--text2);
-  cursor: pointer; margin-bottom: 8px;
+.player-channel-row {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  margin-bottom: 8px;
 }
-.player-channel:hover { color: var(--text); text-decoration: underline; }
+.player-channel-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: none; border: none;
+  color: var(--text2); font-size: 12px;
+  cursor: pointer; padding: 2px 4px;
+  border-radius: 4px;
+}
+.player-channel-btn:hover { color: var(--accent); background: var(--bg3); }
 
 .player-desc-wrap { margin-top: 4px; }
 .player-desc {

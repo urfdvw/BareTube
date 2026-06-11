@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 const BackIcon = () => <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>;
+const ChannelIcon = () => <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" style={{ flexShrink: 0 }}><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>;
 import { useParams, useNavigate } from 'react-router-dom';
 import { getVideoDetails, ApiError, QuotaExceededError } from '../lib/youtubeApi';
 import type { Video } from '../lib/types';
@@ -62,12 +63,15 @@ export default function PlayerPage() {
       {video && (
         <div className="player-info">
           <h2 className="player-title">{video.title}</h2>
-          <p
-            className="player-channel"
-            onClick={() => navigate(`/channel/${video.channelId}`)}
-          >
-            {video.channelTitle}
-          </p>
+          <div className="player-channel-row">
+            <button
+              className="player-channel-btn"
+              onClick={() => navigate(`/channel/${video.channelId}`)}
+            >
+              <ChannelIcon />
+              <span>{video.channelTitle}</span>
+            </button>
+          </div>
           {video.description && (
             <div className="player-desc-wrap">
               <p className={`player-desc ${descExpanded ? 'expanded' : ''}`}>
