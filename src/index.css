@@ -235,7 +235,10 @@ html, body, #root {
   background: var(--bg3);
 }
 
-.video-info { flex: 1; overflow: hidden; }
+.video-info {
+  flex: 1; overflow: hidden;
+  display: flex; flex-direction: column;
+}
 .video-title {
   font-size: 13px;
   font-weight: 500;
@@ -245,9 +248,23 @@ html, body, #root {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.video-meta { font-size: 11px; color: var(--text2); margin-top: 4px; }
-.video-channel-link { color: var(--text2); cursor: pointer; }
-.video-channel-link:hover { color: var(--text); text-decoration: underline; }
+.video-time { font-size: 11px; color: var(--text2); margin-top: 3px; }
+
+.video-channel-row {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+.video-channel-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: none; border: none;
+  color: var(--text2); font-size: 11px;
+  cursor: pointer; padding: 2px 4px;
+  border-radius: 4px;
+  max-width: 100%; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.video-channel-btn:hover { color: var(--accent); background: var(--bg3); }
 
 /* Channel card (search result) */
 .channel-card {

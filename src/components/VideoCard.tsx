@@ -18,6 +18,12 @@ function timeAgo(iso: string): string {
   return `${Math.floor(mo / 12)}y ago`;
 }
 
+const ChannelIcon = () => (
+  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style={{ flexShrink: 0 }}>
+    <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+  </svg>
+);
+
 export default function VideoCard({ video }: Props) {
   const navigate = useNavigate();
   return (
@@ -25,15 +31,16 @@ export default function VideoCard({ video }: Props) {
       <img src={video.thumbnail} alt={video.title} className="video-thumb" loading="lazy" />
       <div className="video-info">
         <p className="video-title">{video.title}</p>
-        <p className="video-meta">
-          <span
-            className="video-channel-link"
+        <p className="video-time">{timeAgo(video.publishedAt)}</p>
+        <div className="video-channel-row">
+          <button
+            className="video-channel-btn"
             onClick={(e) => { e.stopPropagation(); navigate(`/channel/${video.channelId}`); }}
           >
-            {video.channelTitle}
-          </span>
-          {' · '}{timeAgo(video.publishedAt)}
-        </p>
+            <ChannelIcon />
+            <span>{video.channelTitle}</span>
+          </button>
+        </div>
       </div>
     </div>
   );
