@@ -18,6 +18,11 @@ export class ApiError extends Error {
   }
 }
 
+function thumb(t: any): string {
+  const url = t?.medium?.url ?? t?.high?.url ?? t?.default?.url ?? '';
+  return url.startsWith('//') ? `https:${url}` : url;
+}
+
 function checkQuota(units: number): void {
   const q = getQuota();
   if (q.unitsUsed + units > DAILY_QUOTA) throw new QuotaExceededError();
@@ -60,7 +65,7 @@ export async function searchYouTube(query: string): Promise<SearchResult[]> {
         channel: {
           channelId: item.id.channelId,
           title: item.snippet.channelTitle ?? item.snippet.title,
-          thumbnail: item.snippet.thumbnails?.medium?.url ?? item.snippet.thumbnails?.default?.url ?? '',
+          thumbnail: thumb(item.snippet.thumbnails),
         },
       };
     }
@@ -69,7 +74,7 @@ export async function searchYouTube(query: string): Promise<SearchResult[]> {
       video: {
         videoId: item.id.videoId,
         title: item.snippet.title,
-        thumbnail: item.snippet.thumbnails?.medium?.url ?? item.snippet.thumbnails?.default?.url ?? '',
+        thumbnail: thumb(item.snippet.thumbnails),
         channelId: item.snippet.channelId,
         channelTitle: item.snippet.channelTitle,
         publishedAt: item.snippet.publishedAt,
@@ -92,7 +97,7 @@ export async function getChannelDetails(channelId: string): Promise<Channel | nu
   return {
     channelId: item.id,
     title: item.snippet.title,
-    thumbnail: item.snippet.thumbnails?.medium?.url ?? item.snippet.thumbnails?.default?.url ?? '',
+    thumbnail: thumb(item.snippet.thumbnails),
     subscriberCount: item.statistics?.subscriberCount,
     description: item.snippet.description,
     uploadsPlaylistId: item.contentDetails?.relatedPlaylists?.uploads,
@@ -112,7 +117,7 @@ export async function getChannelVideos(uploadsPlaylistId: string, maxResults = 2
     .map((item: any): Video => ({
       videoId: item.snippet.resourceId.videoId,
       title: item.snippet.title,
-      thumbnail: item.snippet.thumbnails?.medium?.url ?? item.snippet.thumbnails?.default?.url ?? '',
+      thumbnail: thumb(item.snippet.thumbnails),
       channelId: item.snippet.channelId ?? item.snippet.videoOwnerChannelId,
       channelTitle: item.snippet.channelTitle ?? item.snippet.videoOwnerChannelTitle,
       publishedAt: item.snippet.publishedAt,
@@ -133,7 +138,7 @@ export async function getVideoDetails(videoId: string): Promise<Video | null> {
   return {
     videoId: item.id,
     title: item.snippet.title,
-    thumbnail: item.snippet.thumbnails?.medium?.url ?? item.snippet.thumbnails?.default?.url ?? '',
+    thumbnail: thumb(item.snippet.thumbnails),
     channelId: item.snippet.channelId,
     channelTitle: item.snippet.channelTitle,
     publishedAt: item.snippet.publishedAt,
