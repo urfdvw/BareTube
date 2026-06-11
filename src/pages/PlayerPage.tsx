@@ -1,26 +1,31 @@
 import { useState, useEffect, useRef } from 'react';
 const BackIcon = () => <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>;
-const ChannelIcon = () => <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" style={{ flexShrink: 0 }}><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>;
 import { useParams, useNavigate } from 'react-router-dom';
-import { getVideoDetails, ApiError, QuotaExceededError } from '../lib/youtubeApi';
-import type { Video } from '../lib/types';
+import { getVideoDetails, getChannelDetails, ApiError, QuotaExceededError } from '../lib/youtubeApi';
+import type { Video, Channel } from '../lib/types';
 
 export default function PlayerPage() {
   const { videoId } = useParams<{ videoId: string }>();
   const navigate = useNavigate();
   const [video, setVideo] = useState<Video | null>(null);
+  const [channel, setChannel] = useState<Channel | null>(null);
+  const [imgFailed, setImgFailed] = useState(false);
   const [error, setError] = useState('');
   const [descExpanded, setDescExpanded] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   useEffect(() => {
     if (!videoId) return;
+    setChannel(null);
+    setImgFailed(false);
     (async () => {
       try {
         const v = await getVideoDetails(videoId);
         if (!v) { setError('Video not found.'); return; }
         setVideo(v);
         updateMediaSession(v);
+        // fetch channel in background for the avatar — don't block on failure
+        getChannelDetails(v.channelId).then(setChannel).catch(() => {});
       } catch (err) {
         if (err instanceof QuotaExceededError || err instanceof ApiError) {
           setError(err.message);
@@ -68,7 +73,18 @@ export default function PlayerPage() {
               className="player-channel-btn"
               onClick={() => navigate(`/channel/${video.channelId}`)}
             >
-              <ChannelIcon />
+              {channel?.thumbnail && !imgFailed ? (
+                <img
+                  src={channel.thumbnail}
+                  alt={video.channelTitle}
+                  className="player-channel-avatar"
+                  onError={() => setImgFailed(true)}
+                />
+              ) : (
+                <div className="player-channel-avatar player-channel-avatar-fallback">
+                  {video.channelTitle.charAt(0).toUpperCase()}
+                </div>
+              )}
               <span>{video.channelTitle}</span>
             </button>
           </div>

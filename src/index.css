@@ -394,13 +394,24 @@ html, body, #root {
   margin-bottom: 8px;
 }
 .player-channel-btn {
-  display: inline-flex; align-items: center; gap: 5px;
+  display: inline-flex; align-items: center; gap: 8px;
   background: none; border: none;
-  color: var(--text2); font-size: 12px;
-  cursor: pointer; padding: 2px 4px;
-  border-radius: 4px;
+  color: var(--text2); font-size: 13px;
+  cursor: pointer; padding: 4px 6px;
+  border-radius: 20px;
 }
 .player-channel-btn:hover { color: var(--accent); background: var(--bg3); }
+
+.player-channel-avatar {
+  width: 32px; height: 32px;
+  border-radius: 50%; object-fit: cover;
+  background: var(--bg3); flex-shrink: 0;
+}
+.player-channel-avatar-fallback {
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg3); color: var(--text2);
+  font-size: 14px; font-weight: 600; flex-shrink: 0;
+}
 
 .player-desc-wrap { margin-top: 4px; }
 .player-desc {
