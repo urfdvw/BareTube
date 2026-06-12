@@ -2,7 +2,7 @@
 
 A minimal distraction-free YouTube PWA.
 
-Start using: urfdvw.github.io/BareTube/
+Start using: [urfdvw.github.io/BareTube/](https://urfdvw.github.io/BareTube/)
 
 ## Features
 
