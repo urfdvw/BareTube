@@ -19,7 +19,8 @@ export default function App() {
         </header>
         <main className="app-main">
           <Routes>
-            <Route path="/" element={<SearchPage />} />
+            <Route path="/" element={<SubscriptionsFeedPage />} />
+            <Route path="/search" element={<SearchPage />} />
             <Route path="/subscriptions" element={<SubscriptionsFeedPage />} />
             <Route path="/channels" element={<ChannelsPage />} />
             <Route path="/channel/:id" element={<ChannelPage />} />

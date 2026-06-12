@@ -166,6 +166,7 @@ html, body, #root {
   justify-content: space-between;
   margin-bottom: 12px;
 }
+.page-header .page-title { margin-bottom: 0; }
 
 .page-title {
   font-size: 18px;
@@ -494,15 +495,23 @@ html, body, #root {
 .empty-msg { color: var(--text2); font-size: 13px; padding: 20px 0; text-align: center; }
 
 .refresh-btn {
-  background: none; border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--text2); font-size: 12px;
-  padding: 4px 12px; cursor: pointer;
+  background: none; border: none;
+  color: var(--text2); padding: 8px; cursor: pointer;
+  display: flex; align-items: center; border-radius: 50%;
 }
-.refresh-btn:hover { border-color: var(--text2); color: var(--text); }
+.refresh-btn:hover { color: var(--text); background: var(--bg3); }
 .refresh-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* About */
+.feed-header-right { display: flex; align-items: center; gap: 8px; }
+.feed-refresh-time { font-size: 12px; color: var(--text2); }
+.pull-indicator {
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden; transition: height 0.2s, opacity 0.2s;
+}
+.pull-icon { font-size: 20px; color: var(--text2); transition: transform 0.2s; }
+.pull-icon--ready { transform: rotate(180deg); color: var(--accent); }
 .about-text { font-size: 13px; color: var(--text2); margin-bottom: 12px; line-height: 1.6; }
 .about-text a { color: var(--accent); }
 .about-list {
