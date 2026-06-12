@@ -1,6 +1,8 @@
 # BareTube
 
-A minimal, privacy-friendly YouTube subscriptions PWA — no account required.
+A minimal distraction-free YouTube PWA.
+
+Start using: urfdvw.github.io/BareTube/
 
 ## Features
 
@@ -16,6 +18,21 @@ A minimal, privacy-friendly YouTube subscriptions PWA — no account required.
 
 1. Get a free YouTube Data API v3 key from [Google Cloud Console](https://console.developers.google.com)
 2. Open the app → hamburger menu → Settings → paste your API key
+
+## FAQ
+
+### How can I play video in the background?
+
+This totally depends on your OS and browser.
+I use Firefox on Android with the "Video Background Play Fix" extension.
+
+### Why am I getting ads?
+
+You will need to log in to your YouTube account and also have a subscription.
+
+If you have a subscription and are logged in to your YouTube account but are still seeing ads in BareTube,
+it is probably because you have anti-tracking features enabled, so your YouTube cookies are not visible to BareTube.
+Try turning that feature off in browser for BareTube.
 
 ## API Quota
 
@@ -35,17 +52,6 @@ npm install
 npm run dev       # dev server at http://localhost:5173
 npm run build     # outputs to docs/ for GitHub Pages
 ```
-
-## Deployment
-
-GitHub Pages: Settings → Pages → Source: `docs/` folder on `main`.
-
-## Limitations
-
-- **Ads**: cannot be removed via embed player (YouTube Premium required)
-- **Background playback**: not reliably supported on all mobile browsers
-- **Shorts**: not filtered from results
-- **Audio-only**: not possible without ToS violation
 
 ## Stack
 
