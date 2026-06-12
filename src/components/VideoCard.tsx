@@ -28,7 +28,10 @@ export default function VideoCard({ video }: Props) {
   const navigate = useNavigate();
   return (
     <div className="video-card" onClick={() => navigate(`/player/${video.videoId}`)}>
-      <img src={video.thumbnail} alt={video.title} className="video-thumb" loading="lazy" />
+      <div className="video-thumb-wrap">
+        <img src={video.thumbnail} alt={video.title} className="video-thumb" loading="lazy" />
+        {video.duration && <span className="video-duration">{video.duration}</span>}
+      </div>
       <div className="video-info">
         <p className="video-title">{video.title}</p>
         <p className="video-time">{timeAgo(video.publishedAt)}</p>

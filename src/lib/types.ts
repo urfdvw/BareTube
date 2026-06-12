@@ -15,6 +15,7 @@ export interface Video {
   channelTitle: string;
   publishedAt: string;
   description?: string;
+  duration?: string;
 }
 
 export interface SearchResult {

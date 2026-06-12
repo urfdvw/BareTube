@@ -18,6 +18,28 @@ export class ApiError extends Error {
   }
 }
 
+function parseDuration(iso: string): string {
+  const m = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!m) return '';
+  const h = parseInt(m[1] ?? '0', 10);
+  const min = parseInt(m[2] ?? '0', 10);
+  const s = parseInt(m[3] ?? '0', 10);
+  if (h > 0) return `${h}:${String(min).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  return `${min}:${String(s).padStart(2, '0')}`;
+}
+
+async function fetchDurations(videoIds: string[]): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  for (let i = 0; i < videoIds.length; i += 50) {
+    const batch = videoIds.slice(i, i + 50);
+    const data = await apiFetch<any>('/videos', { part: 'contentDetails', id: batch.join(',') }, 1);
+    for (const item of data.items ?? []) {
+      map.set(item.id, parseDuration(item.contentDetails?.duration ?? ''));
+    }
+  }
+  return map;
+}
+
 function thumb(t: any): string {
   const url = t?.medium?.url ?? t?.high?.url ?? t?.default?.url ?? '';
   return url.startsWith('//') ? `https:${url}` : url;
@@ -118,7 +140,7 @@ export async function getChannelVideos(uploadsPlaylistId: string, maxResults = 2
     maxResults: String(maxResults),
   }, 1);
 
-  return (data.items ?? [])
+  const videos: Video[] = (data.items ?? [])
     .filter((item: any) => item.snippet?.resourceId?.kind === 'youtube#video')
     .map((item: any): Video => ({
       videoId: item.snippet.resourceId.videoId,
@@ -129,6 +151,9 @@ export async function getChannelVideos(uploadsPlaylistId: string, maxResults = 2
       publishedAt: item.snippet.publishedAt,
       description: item.snippet.description,
     }));
+
+  const durations = await fetchDurations(videos.map(v => v.videoId));
+  return videos.map(v => ({ ...v, duration: durations.get(v.videoId) }));
 }
 
 // Video details (1 unit)

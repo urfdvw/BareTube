@@ -227,13 +227,26 @@ html, body, #root {
 }
 .video-card:hover { background: var(--bg3); }
 
-.video-thumb {
+.video-thumb-wrap {
+  position: relative;
   width: 160px;
   min-width: 160px;
   height: 90px;
+  flex-shrink: 0;
+}
+.video-thumb {
+  width: 100%;
+  height: 100%;
   object-fit: cover;
   border-radius: 4px;
   background: var(--bg3);
+  display: block;
+}
+.video-duration {
+  position: absolute; bottom: 4px; right: 4px;
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff; font-size: 11px; font-weight: 600;
+  padding: 1px 4px; border-radius: 3px; line-height: 1.4;
 }
 
 .video-info {
