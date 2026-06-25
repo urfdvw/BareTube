@@ -447,6 +447,14 @@ html, body, #root {
 }
 .desc-toggle:hover { color: var(--text); }
 
+.desc-timestamp {
+  background: none; border: none;
+  color: var(--accent); font-size: 12px; font-family: inherit;
+  cursor: pointer; padding: 0;
+  line-height: inherit;
+}
+.desc-timestamp:hover { text-decoration: underline; }
+
 /* Settings */
 .settings-section {
   margin-bottom: 24px;

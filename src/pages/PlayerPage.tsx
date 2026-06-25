@@ -4,6 +4,30 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { getVideoDetails, getChannelDetails, ApiError, QuotaExceededError } from '../lib/youtubeApi';
 import type { Video, Channel } from '../lib/types';
 
+const TS_REGEX = /\b(\d{1,2}:\d{2}(?::\d{2})?)\b/g;
+
+function tsToSeconds(ts: string): number {
+  const parts = ts.split(':').map(Number);
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  return parts[0] * 60 + parts[1];
+}
+
+type DescPart = { kind: 'text'; text: string } | { kind: 'ts'; ts: string };
+
+function parseDesc(text: string): DescPart[] {
+  const parts: DescPart[] = [];
+  let last = 0;
+  TS_REGEX.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = TS_REGEX.exec(text)) !== null) {
+    if (m.index > last) parts.push({ kind: 'text', text: text.slice(last, m.index) });
+    parts.push({ kind: 'ts', ts: m[1] });
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) parts.push({ kind: 'text', text: text.slice(last) });
+  return parts;
+}
+
 export default function PlayerPage() {
   const { videoId } = useParams<{ videoId: string }>();
   const navigate = useNavigate();
@@ -36,6 +60,13 @@ export default function PlayerPage() {
     })();
   }, [videoId]);
 
+  function seekTo(seconds: number) {
+    iframeRef.current?.contentWindow?.postMessage(
+      JSON.stringify({ event: 'command', func: 'seekTo', args: [seconds, true] }),
+      'https://www.youtube.com'
+    );
+  }
+
   function updateMediaSession(v: Video) {
     if (!('mediaSession' in navigator)) return;
     navigator.mediaSession.metadata = new MediaMetadata({
@@ -59,7 +90,7 @@ export default function PlayerPage() {
         <iframe
           ref={iframeRef}
           className="player-iframe"
-          src={`https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0`}
+          src={`https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&enablejsapi=1`}
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
           allowFullScreen
           title={video?.title ?? 'YouTube video'}
@@ -90,9 +121,21 @@ export default function PlayerPage() {
           </div>
           {video.description && (
             <div className="player-desc-wrap">
-              <p className={`player-desc ${descExpanded ? 'expanded' : ''}`}>
-                {video.description}
-              </p>
+              <div className={`player-desc ${descExpanded ? 'expanded' : ''}`}>
+                {parseDesc(video.description).map((part, i) =>
+                  part.kind === 'ts' ? (
+                    <button
+                      key={i}
+                      className="desc-timestamp"
+                      onClick={() => seekTo(tsToSeconds(part.ts))}
+                    >
+                      {part.ts}
+                    </button>
+                  ) : (
+                    <span key={i}>{part.text}</span>
+                  )
+                )}
+              </div>
               <button
                 className="desc-toggle"
                 onClick={() => setDescExpanded((e) => !e)}
