@@ -15,7 +15,6 @@ export default function App() {
       <div className="app-shell">
         <header className="app-header">
           <HamburgerMenu />
-          <img src="/logo.svg" alt="BareTube logo" className="header-logo" />
           <span className="header-title">BareTube</span>
         </header>
         <main className="app-main">
