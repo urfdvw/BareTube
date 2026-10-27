@@ -78,6 +78,7 @@ class PlaybackService : Service() {
     private lateinit var wakeLock: PowerManager.WakeLock
     private lateinit var wifiLock: WifiManager.WifiLock
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val releaseLocksRunnable = Runnable { releaseLocks() }
 
     private var playing = false
     private var title = ""
@@ -135,6 +136,7 @@ class PlaybackService : Service() {
 
     override fun onDestroy() {
         instance = null
+        mainHandler.removeCallbacksAndMessages(null)
         releaseLocks()
         session.release()
         super.onDestroy()
@@ -150,7 +152,10 @@ class PlaybackService : Service() {
             loadArtwork(artwork)
         }
 
-        if (playing) acquireLocks() else releaseLocks()
+        // Hold the locks a little after a pause so a system-caused pause can be undone
+        // before the CPU goes to sleep.
+        mainHandler.removeCallbacks(releaseLocksRunnable)
+        if (playing) acquireLocks() else mainHandler.postDelayed(releaseLocksRunnable, 10_000)
 
         session.setMetadata(
             MediaMetadataCompat.Builder()

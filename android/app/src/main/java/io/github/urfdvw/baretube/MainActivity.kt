@@ -3,13 +3,21 @@ package io.github.urfdvw.baretube
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.ActivityNotFoundException
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.PowerManager
+import android.provider.Settings
 import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
@@ -87,8 +95,9 @@ class MainActivity : ComponentActivity() {
             })();
         """
 
-        /** A pause this close to the app going to the background was caused by it, not by the user. */
-        private const val AUTO_PAUSE_WINDOW_MS = 2000L
+        /** A pause this soon after a user action (notification pause, unplugged headphones) is respected. */
+        private const val USER_PAUSE_WINDOW_MS = 3000L
+        private const val MAX_AUTO_RESUMES_PER_MINUTE = 5
     }
 
     private lateinit var root: FrameLayout
@@ -100,9 +109,22 @@ class MainActivity : ComponentActivity() {
     private var signingIn = false
     private var clearHistoryOnLoad = false
     private var mediaReply: JavaScriptReplyProxy? = null
-    private var stoppedAt = 0L
-    private var lastPauseAt = 0L
-    private var commandedPauseAt = 0L
+    private var inBackground = false
+    private var mediaPlaying = false
+    private var mediaTitle = ""
+    private var mediaArtwork = ""
+    private var userPausedAt = 0L
+    private val autoResumes = ArrayDeque<Long>()
+    private val handler = Handler(Looper.getMainLooper())
+    private lateinit var audioManager: AudioManager
+    private lateinit var powerManager: PowerManager
+
+    private val noisyReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            // Headphones unplugged: the player pauses itself; don't resume on the speaker.
+            userPausedAt = SystemClock.elapsedRealtime()
+        }
+    }
 
     private val pickFile = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         fileCallback?.onReceiveValue(if (uri != null) arrayOf(uri) else null)
@@ -123,6 +145,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        audioManager = getSystemService(AudioManager::class.java)
+        powerManager = getSystemService(PowerManager::class.java)
+        ContextCompat.registerReceiver(
+            this, noisyReceiver, IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY), ContextCompat.RECEIVER_NOT_EXPORTED
+        )
 
         WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightStatusBars = false
         root = FrameLayout(this).apply { setBackgroundColor(Color.parseColor("#0f0f0f")) }
@@ -139,7 +166,7 @@ class MainActivity : ComponentActivity() {
 
         setUpWebView()
         PlaybackService.commandHandler = { cmd ->
-            if (cmd == "pause") commandedPauseAt = SystemClock.elapsedRealtime()
+            if (cmd == "pause") userPausedAt = SystemClock.elapsedRealtime()
             mediaReply?.postMessage(cmd)
         }
 
@@ -181,6 +208,8 @@ class MainActivity : ComponentActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     private fun setUpWebView() {
         webView.setBackgroundColor(Color.parseColor("#0f0f0f"))
+        // Keep the renderer process important even when the WebView is not on screen.
+        webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -317,32 +346,46 @@ class MainActivity : ComponentActivity() {
     private fun onMediaState(msg: JSONObject) {
         val state = msg.optString("state")
         if (state == "stopped") {
+            mediaPlaying = false
             PlaybackService.stop()
             return
         }
         val videoId = msg.optString("videoId")
-        PlaybackService.update(
-            this,
-            state == "playing",
-            msg.optString("title"),
-            "",
-            if (videoId.isNotEmpty()) "https://i.ytimg.com/vi/$videoId/hqdefault.jpg" else ""
-        )
-        if (state == "paused") {
-            lastPauseAt = SystemClock.elapsedRealtime()
-            resumeIfPausedByBackground()
-        }
+        mediaPlaying = state == "playing"
+        mediaTitle = msg.optString("title")
+        mediaArtwork = if (videoId.isNotEmpty()) "https://i.ytimg.com/vi/$videoId/hqdefault.jpg" else ""
+        PlaybackService.update(this, mediaPlaying, mediaTitle, "", mediaArtwork)
+        if (mediaPlaying) askToIgnoreBatteryOptimizations()
+        else handler.postDelayed({ resumeIfPausedBySystem() }, 500)
     }
 
-    // Safety net: if the player still pauses itself when the app is backgrounded
-    // or the screen locks, start it again (unless the user paused from the notification).
-    private fun resumeIfPausedByBackground() {
+    // Safety net: when the app is in the background or the screen is off, the player
+    // can still be paused by the system. Start it again unless the user paused it
+    // (notification, unplugged headphones) or a call is going on.
+    private fun resumeIfPausedBySystem() {
+        if (mediaPlaying) return
+        if (!inBackground && powerManager.isInteractive) return
         val now = SystemClock.elapsedRealtime()
-        if (stoppedAt == 0L || lastPauseAt == 0L) return
-        if (Math.abs(lastPauseAt - stoppedAt) > AUTO_PAUSE_WINDOW_MS) return
-        if (now - commandedPauseAt < AUTO_PAUSE_WINDOW_MS) return
-        lastPauseAt = 0L
+        if (now - userPausedAt < USER_PAUSE_WINDOW_MS) return
+        if (audioManager.mode != AudioManager.MODE_NORMAL) return
+        while (autoResumes.isNotEmpty() && now - autoResumes.first() > 60_000) autoResumes.removeFirst()
+        if (autoResumes.size >= MAX_AUTO_RESUMES_PER_MINUTE) return
+        autoResumes.addLast(now)
         mediaReply?.postMessage("play")
+    }
+
+    private fun askToIgnoreBatteryOptimizations() {
+        if (powerManager.isIgnoringBatteryOptimizations(packageName)) return
+        val prefs = getSharedPreferences("baretube", MODE_PRIVATE)
+        if (prefs.getBoolean("asked_battery", false)) return
+        prefs.edit().putBoolean("asked_battery", true).apply()
+        try {
+            @SuppressLint("BatteryLife")
+            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName"))
+            startActivity(intent)
+        } catch (e: ActivityNotFoundException) {
+            // Some devices don't offer this screen.
+        }
     }
 
     private fun isAppUrl(url: Uri): Boolean =
@@ -373,24 +416,24 @@ class MainActivity : ComponentActivity() {
         webView.saveState(outState)
     }
 
-    override fun onStart() {
-        super.onStart()
-        stoppedAt = 0L
-    }
-
-    override fun onStop() {
-        super.onStop()
-        stoppedAt = SystemClock.elapsedRealtime()
-        resumeIfPausedByBackground()
+    override fun onResume() {
+        super.onResume()
+        inBackground = false
     }
 
     override fun onPause() {
         super.onPause()
+        inBackground = true
         // Deliberately not calling webView.onPause(): that would stop playback.
         CookieManager.getInstance().flush()
+        // Make sure the foreground service (wake lock, wifi lock) is running before the
+        // app loses the foreground, after which Android no longer allows starting it.
+        if (mediaPlaying) PlaybackService.update(this, true, mediaTitle, "", mediaArtwork)
     }
 
     override fun onDestroy() {
+        unregisterReceiver(noisyReceiver)
+        handler.removeCallbacksAndMessages(null)
         PlaybackService.commandHandler = null
         PlaybackService.stop()
         root.removeAllViews()
