@@ -38,6 +38,7 @@ class PlaybackService : Service() {
         private const val ACTION_UPDATE = "update"
         private const val ACTION_PLAY = "play"
         private const val ACTION_PAUSE = "pause"
+        private const val ACTION_CLOSE = "close"
         private const val EXTRA_PLAYING = "playing"
         private const val EXTRA_TITLE = "title"
         private const val EXTRA_ARTIST = "artist"
@@ -121,6 +122,10 @@ class PlaybackService : Service() {
             }
             ACTION_PLAY -> commandHandler?.invoke("play")
             ACTION_PAUSE -> commandHandler?.invoke("pause")
+            ACTION_CLOSE -> {
+                commandHandler?.invoke("pause")
+                stopPlayback()
+            }
             else -> if (!playing) stopSelf()
         }
         return START_NOT_STICKY
@@ -194,6 +199,7 @@ class PlaybackService : Service() {
             .setOnlyAlertOnce(true)
             .setOngoing(playing)
             .addAction(toggle)
+            .addAction(R.drawable.ic_close, getString(R.string.close), serviceIntent(ACTION_CLOSE))
             .setStyle(
                 androidx.media.app.NotificationCompat.MediaStyle()
                     .setMediaSession(session.sessionToken)

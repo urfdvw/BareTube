@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutId="sign_in"
+        android:shortcutShortLabel="@string/shortcut_sign_in">
+        <intent
+            android:action="io.github.urfdvw.baretube.SIGN_IN"
+            android:targetClass="io.github.urfdvw.baretube.MainActivity"
+            android:targetPackage="io.github.urfdvw.baretube" />
+    </shortcut>
+</shortcuts>

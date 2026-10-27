@@ -10,6 +10,7 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.CookieManager
@@ -28,6 +29,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.webkit.JavaScriptReplyProxy
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import org.json.JSONObject
@@ -35,8 +37,10 @@ import org.json.JSONObject
 class MainActivity : ComponentActivity() {
 
     companion object {
+        const val ACTION_SIGN_IN = "io.github.urfdvw.baretube.SIGN_IN"
         private val APP_URL = Uri.parse(BuildConfig.APP_URL)
         private val APP_ORIGIN = "${APP_URL.scheme}://${APP_URL.host}"
+        private val YOUTUBE_ORIGINS = setOf("https://www.youtube.com", "https://www.youtube-nocookie.com")
         private const val SIGN_IN_URL =
             "https://accounts.google.com/ServiceLogin?service=youtube&passive=true&continue=https%3A%2F%2Fm.youtube.com%2F"
 
@@ -56,6 +60,35 @@ class MainActivity : ComponentActivity() {
               } catch (e) {}
             })();
         """
+
+        // Runs in the YouTube embed: reports the <video> state to the app and
+        // obeys play/pause commands from the notification / lock screen.
+        private const val MEDIA_JS = """
+            (function () {
+              var m = location.pathname.match(/^\/embed\/([^\/?#]+)/);
+              if (!m) return;
+              var last = '';
+              function send(state) {
+                var b = window.BareTubeMedia;
+                if (!b || state === last) return;
+                last = state;
+                if (!b.onmessage) b.onmessage = function (e) {
+                  var v = document.querySelector('video');
+                  if (!v) return;
+                  if (e.data === 'play') v.play(); else if (e.data === 'pause') v.pause();
+                };
+                var t = document.querySelector('.ytp-title-link');
+                var title = (t && t.textContent) || document.title.replace(/ - YouTube$/, '');
+                b.postMessage(JSON.stringify({ state: state, title: title, videoId: m[1] }));
+              }
+              document.addEventListener('playing', function () { send('playing'); }, true);
+              document.addEventListener('pause', function () { send('paused'); }, true);
+              window.addEventListener('pagehide', function () { send('stopped'); });
+            })();
+        """
+
+        /** A pause this close to the app going to the background was caused by it, not by the user. */
+        private const val AUTO_PAUSE_WINDOW_MS = 2000L
     }
 
     private lateinit var root: FrameLayout
@@ -66,6 +99,10 @@ class MainActivity : ComponentActivity() {
     private var pendingSave: String? = null
     private var signingIn = false
     private var clearHistoryOnLoad = false
+    private var mediaReply: JavaScriptReplyProxy? = null
+    private var stoppedAt = 0L
+    private var lastPauseAt = 0L
+    private var commandedPauseAt = 0L
 
     private val pickFile = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         fileCallback?.onReceiveValue(if (uri != null) arrayOf(uri) else null)
@@ -102,7 +139,8 @@ class MainActivity : ComponentActivity() {
 
         setUpWebView()
         PlaybackService.commandHandler = { cmd ->
-            webView.evaluateJavascript("window.__bareTubeMedia && window.__bareTubeMedia('$cmd')", null)
+            if (cmd == "pause") commandedPauseAt = SystemClock.elapsedRealtime()
+            mediaReply?.postMessage(cmd)
         }
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -123,8 +161,21 @@ class MainActivity : ComponentActivity() {
                 .launch(Manifest.permission.POST_NOTIFICATIONS)
         }
 
-        if (savedInstanceState == null) webView.loadUrl(BuildConfig.APP_URL)
-        else webView.restoreState(savedInstanceState)
+        when {
+            intent?.action == ACTION_SIGN_IN -> startSignIn()
+            savedInstanceState == null -> webView.loadUrl(BuildConfig.APP_URL)
+            else -> webView.restoreState(savedInstanceState)
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.action == ACTION_SIGN_IN) startSignIn()
+    }
+
+    private fun startSignIn() {
+        signingIn = true
+        webView.loadUrl(SIGN_IN_URL)
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -148,6 +199,15 @@ class MainActivity : ComponentActivity() {
 
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             WebViewCompat.addDocumentStartJavaScript(webView, KEEP_VISIBLE_JS, setOf("*"))
+            WebViewCompat.addDocumentStartJavaScript(webView, MEDIA_JS, YOUTUBE_ORIGINS)
+        }
+
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            WebViewCompat.addWebMessageListener(webView, "BareTubeMedia", YOUTUBE_ORIGINS) { _, message, _, _, reply ->
+                val msg = try { JSONObject(message.data ?: "") } catch (e: Exception) { return@addWebMessageListener }
+                mediaReply = reply
+                onMediaState(msg)
+            }
         }
 
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
@@ -157,15 +217,11 @@ class MainActivity : ComponentActivity() {
                 val data = message.data ?: return@addWebMessageListener
                 val msg = try { JSONObject(data) } catch (e: Exception) { return@addWebMessageListener }
                 when (msg.optString("type")) {
-                    "playback" -> onPlayback(msg)
                     "saveFile" -> {
                         pendingSave = msg.optString("content")
                         createFile.launch(msg.optString("name", "baretube-backup.json"))
                     }
-                    "signIn" -> {
-                        signingIn = true
-                        webView.loadUrl(SIGN_IN_URL)
-                    }
+                    "signIn" -> startSignIn()
                     "signOut" -> CookieManager.getInstance().apply {
                         removeAllCookies(null)
                         flush()
@@ -182,6 +238,9 @@ class MainActivity : ComponentActivity() {
                 if (!request.isForMainFrame) return false
                 val url = request.url
                 if (isAppUrl(url)) return false
+                // Any Google login page (e.g. from the player's "Sign in" prompt) stays in the app,
+                // so the cookies end up in the app and not in an external browser.
+                if (url.host == "accounts.google.com") signingIn = true
                 if (signingIn) {
                     // Stay inside the WebView for the Google / YouTube login flow; ignore app intents.
                     return url.scheme != "https" || !isGoogleHost(url.host)
@@ -202,6 +261,11 @@ class MainActivity : ComponentActivity() {
                     // Login finished and YouTube set its cookies: return to the app.
                     signingIn = false
                     CookieManager.getInstance().flush()
+                    Toast.makeText(
+                        this@MainActivity,
+                        if (isSignedIn()) "Signed in to YouTube" else "YouTube sign-in not completed",
+                        Toast.LENGTH_LONG
+                    ).show()
                     clearHistoryOnLoad = true
                     view.loadUrl(BuildConfig.APP_URL + "#/settings")
                 }
@@ -250,17 +314,35 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun onPlayback(msg: JSONObject) {
-        when (msg.optString("state")) {
-            "stopped" -> PlaybackService.stop()
-            else -> PlaybackService.update(
-                this,
-                msg.optString("state") == "playing",
-                msg.optString("title"),
-                msg.optString("artist"),
-                msg.optString("artwork")
-            )
+    private fun onMediaState(msg: JSONObject) {
+        val state = msg.optString("state")
+        if (state == "stopped") {
+            PlaybackService.stop()
+            return
         }
+        val videoId = msg.optString("videoId")
+        PlaybackService.update(
+            this,
+            state == "playing",
+            msg.optString("title"),
+            "",
+            if (videoId.isNotEmpty()) "https://i.ytimg.com/vi/$videoId/hqdefault.jpg" else ""
+        )
+        if (state == "paused") {
+            lastPauseAt = SystemClock.elapsedRealtime()
+            resumeIfPausedByBackground()
+        }
+    }
+
+    // Safety net: if the player still pauses itself when the app is backgrounded
+    // or the screen locks, start it again (unless the user paused from the notification).
+    private fun resumeIfPausedByBackground() {
+        val now = SystemClock.elapsedRealtime()
+        if (stoppedAt == 0L || lastPauseAt == 0L) return
+        if (Math.abs(lastPauseAt - stoppedAt) > AUTO_PAUSE_WINDOW_MS) return
+        if (now - commandedPauseAt < AUTO_PAUSE_WINDOW_MS) return
+        lastPauseAt = 0L
+        mediaReply?.postMessage("play")
     }
 
     private fun isAppUrl(url: Uri): Boolean =
@@ -289,6 +371,17 @@ class MainActivity : ComponentActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         webView.saveState(outState)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        stoppedAt = 0L
+    }
+
+    override fun onStop() {
+        super.onStop()
+        stoppedAt = SystemClock.elapsedRealtime()
+        resumeIfPausedByBackground()
     }
 
     override fun onPause() {

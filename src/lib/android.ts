@@ -1,9 +1,6 @@
 // Bridge to the BareTube Android app (android/). Only present when the PWA
 // runs inside the app's WebView; every helper is a no-op in a normal browser.
 
-export type PlaybackState = 'playing' | 'paused' | 'stopped';
-export type MediaCommand = 'play' | 'pause';
-
 interface AndroidBridge {
   postMessage(message: string): void;
   onmessage: ((event: { data: string }) => void) | null;
@@ -12,8 +9,6 @@ interface AndroidBridge {
 declare global {
   interface Window {
     BareTubeAndroid?: AndroidBridge;
-    // Called by the app for notification / lock-screen controls.
-    __bareTubeMedia?: (cmd: MediaCommand) => void;
   }
 }
 
@@ -21,10 +16,6 @@ export const isAndroidApp = typeof window !== 'undefined' && !!window.BareTubeAn
 
 function send(message: object): void {
   window.BareTubeAndroid?.postMessage(JSON.stringify(message));
-}
-
-export function reportPlayback(state: PlaybackState, title = '', artist = '', artwork = ''): void {
-  send({ type: 'playback', state, title, artist, artwork });
 }
 
 export function saveFile(name: string, mime: string, content: string): void {

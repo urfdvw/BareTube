@@ -3,4 +3,6 @@
     <string name="channel_playback">Playback</string>
     <string name="play">Play</string>
     <string name="pause">Pause</string>
+    <string name="close">Close</string>
+    <string name="shortcut_sign_in">Sign in to YouTube</string>
 </resources>

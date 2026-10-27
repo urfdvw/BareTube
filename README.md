@@ -39,7 +39,7 @@ Try turning that feature off in browser for BareTube.
 `android/` is a native wrapper around the hosted PWA. It uses the system WebView (no browser needed) and adds:
 
 - Background and lock-screen playback (foreground media service + notification / lock-screen play/pause)
-- Persistent YouTube login: Settings → YouTube Account → Sign In
+- Persistent YouTube login: long-press the app icon → "Sign in to YouTube" (or Settings → YouTube Account)
 - Backup export / import through the Android file picker
 
 The APK is built by GitHub Actions (`.github/workflows/android.yml`) on every push touching `android/`; download it from the run's artifacts. To build locally with the Android SDK: `cd android && ./gradlew assembleRelease`.
