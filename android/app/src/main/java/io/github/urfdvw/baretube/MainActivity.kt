@@ -10,18 +10,15 @@ import android.content.IntentFilter
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.graphics.Color
-import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
-import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.CookieManager
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -46,6 +43,7 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val ACTION_SIGN_IN = "io.github.urfdvw.baretube.SIGN_IN"
+        const val ACTION_SHARE_LOG = "io.github.urfdvw.baretube.SHARE_LOG"
         private val APP_URL = Uri.parse(BuildConfig.APP_URL)
         private val APP_ORIGIN = "${APP_URL.scheme}://${APP_URL.host}"
         private val YOUTUBE_ORIGINS = setOf("https://www.youtube.com", "https://www.youtube-nocookie.com")
@@ -58,6 +56,9 @@ class MainActivity : ComponentActivity() {
             (function () {
               try {
                 var proto = Document.prototype;
+                var real = Object.getOwnPropertyDescriptor(proto, 'visibilityState');
+                // What Chromium really reports, for the debug log.
+                Object.defineProperty(window, '__btRealVisibility', { value: function () { return real.get.call(document); } });
                 Object.defineProperty(proto, 'hidden', { get: function () { return false; }, configurable: true });
                 Object.defineProperty(proto, 'webkitHidden', { get: function () { return false; }, configurable: true });
                 Object.defineProperty(proto, 'visibilityState', { get: function () { return 'visible'; }, configurable: true });
@@ -69,35 +70,60 @@ class MainActivity : ComponentActivity() {
             })();
         """
 
-        // Runs in the YouTube embed: reports the <video> state to the app and
-        // obeys play/pause commands from the notification / lock screen.
+        // Runs in the YouTube embed: reports the <video> state to the app, obeys
+        // play/pause commands from the notification / lock screen, and sends
+        // diagnostics for the debug log.
         private const val MEDIA_JS = """
             (function () {
               var m = location.pathname.match(/^\/embed\/([^\/?#]+)/);
               if (!m) return;
               var last = '';
-              function send(state) {
+              function bridge() {
                 var b = window.BareTubeMedia;
-                if (!b || state === last) return;
-                last = state;
-                if (!b.onmessage) b.onmessage = function (e) {
+                if (b && !b.onmessage) b.onmessage = function (e) {
                   var v = document.querySelector('video');
                   if (!v) return;
                   if (e.data === 'play') v.play(); else if (e.data === 'pause') v.pause();
                 };
+                return b;
+              }
+              function log(msg) {
+                var b = bridge();
+                if (b) b.postMessage(JSON.stringify({ type: 'log', msg: msg }));
+              }
+              function send(state) {
+                var b = bridge();
+                if (!b || state === last) return;
+                last = state;
                 var t = document.querySelector('.ytp-title-link');
                 var title = (t && t.textContent) || document.title.replace(/ - YouTube$/, '');
-                b.postMessage(JSON.stringify({ state: state, title: title, videoId: m[1] }));
+                b.postMessage(JSON.stringify({ type: 'state', state: state, title: title, videoId: m[1] }));
+              }
+              function describe() {
+                var v = document.querySelector('video');
+                var vis = window.__btRealVisibility ? window.__btRealVisibility() : '?';
+                if (!v) return 'no video, vis=' + vis;
+                var q = v.getVideoPlaybackQuality ? v.getVideoPlaybackQuality() : null;
+                return 't=' + v.currentTime.toFixed(1) + ' paused=' + v.paused + ' rs=' + v.readyState +
+                  ' ns=' + v.networkState + ' vis=' + vis +
+                  ' frames=' + (q ? q.totalVideoFrames + '/' + q.droppedVideoFrames : '?') +
+                  ' abytes=' + v.webkitAudioDecodedByteCount;
               }
               document.addEventListener('playing', function () { send('playing'); }, true);
               document.addEventListener('pause', function () { send('paused'); }, true);
               window.addEventListener('pagehide', function () { send('stopped'); });
+              ['play', 'playing', 'pause', 'waiting', 'stalled', 'ended', 'error', 'emptied'].forEach(function (name) {
+                document.addEventListener(name, function () { log('video ' + name + ': ' + describe()); }, true);
+              });
+              ['freeze', 'resume', 'visibilitychange'].forEach(function (name) {
+                document.addEventListener(name, function () { log('page ' + name + ': ' + describe()); }, true);
+              });
+              ['blur', 'focus', 'pagehide', 'pageshow'].forEach(function (name) {
+                window.addEventListener(name, function () { log('window ' + name + ': ' + describe()); }, true);
+              });
+              setInterval(function () { if (document.querySelector('video')) log('tick ' + describe()); }, 10000);
             })();
         """
-
-        /** A pause this soon after a user action (notification pause, unplugged headphones) is respected. */
-        private const val USER_PAUSE_WINDOW_MS = 3000L
-        private const val MAX_AUTO_RESUMES_PER_MINUTE = 5
     }
 
     private lateinit var root: FrameLayout
@@ -109,20 +135,14 @@ class MainActivity : ComponentActivity() {
     private var signingIn = false
     private var clearHistoryOnLoad = false
     private var mediaReply: JavaScriptReplyProxy? = null
-    private var inBackground = false
     private var mediaPlaying = false
     private var mediaTitle = ""
     private var mediaArtwork = ""
-    private var userPausedAt = 0L
-    private val autoResumes = ArrayDeque<Long>()
-    private val handler = Handler(Looper.getMainLooper())
-    private lateinit var audioManager: AudioManager
     private lateinit var powerManager: PowerManager
 
-    private val noisyReceiver = object : BroadcastReceiver() {
+    private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            // Headphones unplugged: the player pauses itself; don't resume on the speaker.
-            userPausedAt = SystemClock.elapsedRealtime()
+            DebugLog.log("system ${intent.action?.substringAfterLast('.')}")
         }
     }
 
@@ -145,10 +165,18 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        audioManager = getSystemService(AudioManager::class.java)
+        DebugLog.init(this)
+        DebugLog.log("activity onCreate (restored=${savedInstanceState != null})")
         powerManager = getSystemService(PowerManager::class.java)
         ContextCompat.registerReceiver(
-            this, noisyReceiver, IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY), ContextCompat.RECEIVER_NOT_EXPORTED
+            this, screenReceiver,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_SCREEN_ON)
+                addAction(Intent.ACTION_USER_PRESENT)
+                addAction(Intent.ACTION_AUDIO_BECOMING_NOISY)
+            },
+            ContextCompat.RECEIVER_NOT_EXPORTED
         )
 
         WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightStatusBars = false
@@ -166,7 +194,7 @@ class MainActivity : ComponentActivity() {
 
         setUpWebView()
         PlaybackService.commandHandler = { cmd ->
-            if (cmd == "pause") userPausedAt = SystemClock.elapsedRealtime()
+            DebugLog.log("notification command $cmd")
             mediaReply?.postMessage(cmd)
         }
 
@@ -188,6 +216,7 @@ class MainActivity : ComponentActivity() {
                 .launch(Manifest.permission.POST_NOTIFICATIONS)
         }
 
+        if (intent?.action == ACTION_SHARE_LOG) shareLog()
         when {
             intent?.action == ACTION_SIGN_IN -> startSignIn()
             savedInstanceState == null -> webView.loadUrl(BuildConfig.APP_URL)
@@ -198,6 +227,18 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         if (intent.action == ACTION_SIGN_IN) startSignIn()
+        if (intent.action == ACTION_SHARE_LOG) shareLog()
+    }
+
+    private fun shareLog() {
+        val info = "BareTube ${BuildConfig.VERSION_NAME}, Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT}), " +
+            "${Build.MANUFACTURER} ${Build.MODEL}, WebView ${WebViewCompat.getCurrentWebViewPackage(this)?.versionName}, " +
+            "battery optimization ignored=${powerManager.isIgnoringBatteryOptimizations(packageName)}\n\n"
+        val send = Intent(Intent.ACTION_SEND)
+            .setType("text/plain")
+            .putExtra(Intent.EXTRA_SUBJECT, "BareTube debug log")
+            .putExtra(Intent.EXTRA_TEXT, info + DebugLog.tail())
+        startActivity(Intent.createChooser(send, "Share debug log"))
     }
 
     private fun startSignIn() {
@@ -235,7 +276,8 @@ class MainActivity : ComponentActivity() {
             WebViewCompat.addWebMessageListener(webView, "BareTubeMedia", YOUTUBE_ORIGINS) { _, message, _, _, reply ->
                 val msg = try { JSONObject(message.data ?: "") } catch (e: Exception) { return@addWebMessageListener }
                 mediaReply = reply
-                onMediaState(msg)
+                if (msg.optString("type") == "log") DebugLog.log("js ${msg.optString("msg")}")
+                else onMediaState(msg)
             }
         }
 
@@ -275,6 +317,16 @@ class MainActivity : ComponentActivity() {
                     return url.scheme != "https" || !isGoogleHost(url.host)
                 }
                 openExternally(url)
+                return true
+            }
+
+            override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+                // Without this the whole app would crash. Rebuild the activity with a fresh WebView.
+                DebugLog.log("renderer gone (crashed=${detail.didCrash()}, priority=${detail.rendererPriorityAtExit()})")
+                PlaybackService.stop()
+                root.removeView(view)
+                view.destroy()
+                recreate()
                 return true
             }
 
@@ -345,6 +397,7 @@ class MainActivity : ComponentActivity() {
 
     private fun onMediaState(msg: JSONObject) {
         val state = msg.optString("state")
+        DebugLog.log("media state $state")
         if (state == "stopped") {
             mediaPlaying = false
             PlaybackService.stop()
@@ -356,22 +409,6 @@ class MainActivity : ComponentActivity() {
         mediaArtwork = if (videoId.isNotEmpty()) "https://i.ytimg.com/vi/$videoId/hqdefault.jpg" else ""
         PlaybackService.update(this, mediaPlaying, mediaTitle, "", mediaArtwork)
         if (mediaPlaying) askToIgnoreBatteryOptimizations()
-        else handler.postDelayed({ resumeIfPausedBySystem() }, 500)
-    }
-
-    // Safety net: when the app is in the background or the screen is off, the player
-    // can still be paused by the system. Start it again unless the user paused it
-    // (notification, unplugged headphones) or a call is going on.
-    private fun resumeIfPausedBySystem() {
-        if (mediaPlaying) return
-        if (!inBackground && powerManager.isInteractive) return
-        val now = SystemClock.elapsedRealtime()
-        if (now - userPausedAt < USER_PAUSE_WINDOW_MS) return
-        if (audioManager.mode != AudioManager.MODE_NORMAL) return
-        while (autoResumes.isNotEmpty() && now - autoResumes.first() > 60_000) autoResumes.removeFirst()
-        if (autoResumes.size >= MAX_AUTO_RESUMES_PER_MINUTE) return
-        autoResumes.addLast(now)
-        mediaReply?.postMessage("play")
     }
 
     private fun askToIgnoreBatteryOptimizations() {
@@ -416,14 +453,29 @@ class MainActivity : ComponentActivity() {
         webView.saveState(outState)
     }
 
+    override fun onStart() {
+        super.onStart()
+        DebugLog.log("activity onStart")
+    }
+
     override fun onResume() {
         super.onResume()
-        inBackground = false
+        DebugLog.log("activity onResume")
+    }
+
+    override fun onStop() {
+        super.onStop()
+        DebugLog.log("activity onStop")
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        DebugLog.log("activity onTrimMemory $level")
     }
 
     override fun onPause() {
         super.onPause()
-        inBackground = true
+        DebugLog.log("activity onPause (mediaPlaying=$mediaPlaying)")
         // Deliberately not calling webView.onPause(): that would stop playback.
         CookieManager.getInstance().flush()
         // Make sure the foreground service (wake lock, wifi lock) is running before the
@@ -432,8 +484,8 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        unregisterReceiver(noisyReceiver)
-        handler.removeCallbacksAndMessages(null)
+        DebugLog.log("activity onDestroy")
+        unregisterReceiver(screenReceiver)
         PlaybackService.commandHandler = null
         PlaybackService.stop()
         root.removeAllViews()

@@ -10,6 +10,7 @@ import android.webkit.WebView
  */
 class BackgroundWebView(context: Context) : WebView(context) {
     override fun onWindowVisibilityChanged(visibility: Int) {
+        DebugLog.log("window visibility $visibility (reported as VISIBLE)")
         super.onWindowVisibilityChanged(View.VISIBLE)
     }
 

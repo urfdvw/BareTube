@@ -64,8 +64,10 @@ class PlaybackService : Service() {
                 .putExtra(EXTRA_ARTWORK, artwork)
             try {
                 ContextCompat.startForegroundService(context, intent)
+                DebugLog.log("service start requested")
             } catch (e: Exception) {
-                // Starting from the background is not allowed on Android 12+; nothing to do.
+                // Starting from the background is not allowed on Android 12+.
+                DebugLog.log("service start refused: $e")
             }
         }
 
@@ -78,7 +80,6 @@ class PlaybackService : Service() {
     private lateinit var wakeLock: PowerManager.WakeLock
     private lateinit var wifiLock: WifiManager.WifiLock
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val releaseLocksRunnable = Runnable { releaseLocks() }
 
     private var playing = false
     private var title = ""
@@ -89,6 +90,8 @@ class PlaybackService : Service() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        DebugLog.init(this)
+        DebugLog.log("service onCreate")
 
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
@@ -135,6 +138,7 @@ class PlaybackService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        DebugLog.log("service onDestroy")
         instance = null
         mainHandler.removeCallbacksAndMessages(null)
         releaseLocks()
@@ -152,10 +156,7 @@ class PlaybackService : Service() {
             loadArtwork(artwork)
         }
 
-        // Hold the locks a little after a pause so a system-caused pause can be undone
-        // before the CPU goes to sleep.
-        mainHandler.removeCallbacks(releaseLocksRunnable)
-        if (playing) acquireLocks() else mainHandler.postDelayed(releaseLocksRunnable, 10_000)
+        if (playing) acquireLocks() else releaseLocks()
 
         session.setMetadata(
             MediaMetadataCompat.Builder()
@@ -244,11 +245,13 @@ class PlaybackService : Service() {
     }
 
     private fun acquireLocks() {
+        if (!wakeLock.isHeld) DebugLog.log("locks acquired")
         if (!wakeLock.isHeld) wakeLock.acquire()
         if (!wifiLock.isHeld) wifiLock.acquire()
     }
 
     private fun releaseLocks() {
+        if (wakeLock.isHeld) DebugLog.log("locks released")
         if (wakeLock.isHeld) wakeLock.release()
         if (wifiLock.isHeld) wifiLock.release()
     }

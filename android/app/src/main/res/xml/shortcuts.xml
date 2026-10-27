@@ -10,4 +10,14 @@
             android:targetClass="io.github.urfdvw.baretube.MainActivity"
             android:targetPackage="io.github.urfdvw.baretube" />
     </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutId="share_log"
+        android:shortcutShortLabel="@string/shortcut_share_log">
+        <intent
+            android:action="io.github.urfdvw.baretube.SHARE_LOG"
+            android:targetClass="io.github.urfdvw.baretube.MainActivity"
+            android:targetPackage="io.github.urfdvw.baretube" />
+    </shortcut>
 </shortcuts>
