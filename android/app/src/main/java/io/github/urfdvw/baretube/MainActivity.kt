@@ -53,6 +53,11 @@ class MainActivity : ComponentActivity() {
 
         // Runs in every frame (including the YouTube embed) before page scripts,
         // so players never see the page as hidden.
+        //
+        // With the screen off there is no vsync, so requestAnimationFrame stops firing
+        // even though the page is "visible"; the YouTube player then stops loading data
+        // and playback runs dry. When no real frame arrives within 100 ms, the callback
+        // is run from a timer instead, like a screen that is still on.
         private const val KEEP_VISIBLE_JS = """
             (function () {
               try {
@@ -64,6 +69,37 @@ class MainActivity : ComponentActivity() {
                 Object.defineProperty(proto, 'webkitHidden', { get: function () { return false; }, configurable: true });
                 Object.defineProperty(proto, 'visibilityState', { get: function () { return 'visible'; }, configurable: true });
                 Object.defineProperty(proto, 'webkitVisibilityState', { get: function () { return 'visible'; }, configurable: true });
+                var nRaf = window.requestAnimationFrame, nCaf = window.cancelAnimationFrame;
+                var stats = { fallbacks: 0 };
+                Object.defineProperty(window, '__btRafStats', { value: stats });
+                if (nRaf && nCaf) {
+                  var seq = 0, live = {};
+                  window.requestAnimationFrame = function (cb) {
+                    var id = ++seq;
+                    var rid = nRaf.call(window, function (t) {
+                      if (!live[id]) return;
+                      clearTimeout(live[id][1]);
+                      delete live[id];
+                      cb(t);
+                    });
+                    var tid = setTimeout(function () {
+                      if (!live[id]) return;
+                      nCaf.call(window, live[id][0]);
+                      delete live[id];
+                      stats.fallbacks++;
+                      cb(performance.now());
+                    }, 100);
+                    live[id] = [rid, tid];
+                    return id;
+                  };
+                  window.cancelAnimationFrame = function (id) {
+                    var e = live[id];
+                    if (!e) return;
+                    delete live[id];
+                    nCaf.call(window, e[0]);
+                    clearTimeout(e[1]);
+                  };
+                }
                 var block = function (e) { e.stopImmediatePropagation(); };
                 window.addEventListener('visibilitychange', block, true);
                 window.addEventListener('webkitvisibilitychange', block, true);
@@ -108,7 +144,8 @@ class MainActivity : ComponentActivity() {
                 return 't=' + v.currentTime.toFixed(1) + ' paused=' + v.paused + ' rs=' + v.readyState +
                   ' ns=' + v.networkState + ' vis=' + vis +
                   ' frames=' + (q ? q.totalVideoFrames + '/' + q.droppedVideoFrames : '?') +
-                  ' abytes=' + v.webkitAudioDecodedByteCount;
+                  ' abytes=' + v.webkitAudioDecodedByteCount +
+                  ' rafFallbacks=' + (window.__btRafStats ? window.__btRafStats.fallbacks : '?');
               }
               document.addEventListener('playing', function () { send('playing'); }, true);
               document.addEventListener('pause', function () { send('paused'); }, true);
@@ -177,7 +214,8 @@ class MainActivity : ComponentActivity() {
                 addAction(Intent.ACTION_USER_PRESENT)
                 addAction(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
             },
-            ContextCompat.RECEIVER_NOT_EXPORTED
+            // Protected system broadcasts: only the system can send these.
+            ContextCompat.RECEIVER_EXPORTED
         )
 
         WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightStatusBars = false
