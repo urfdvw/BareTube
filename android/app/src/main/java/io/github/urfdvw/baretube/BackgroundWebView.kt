@@ -1,20 +1,17 @@
 package io.github.urfdvw.baretube
 
 import android.content.Context
-import android.view.View
 import android.webkit.WebView
 
 /**
- * A WebView that never tells Chromium it went invisible, so media keeps
- * playing when the app is in the background or the screen is locked.
+ * The WebView is told the truth about its visibility: when hidden, Chromium
+ * stops decoding video and keeps playing the audio only. (Pretending to stay
+ * visible made the video decoder wait for frames nobody draws, which stalled
+ * audio too.) Pages still see themselves as visible via KEEP_VISIBLE_JS.
  */
 class BackgroundWebView(context: Context) : WebView(context) {
     override fun onWindowVisibilityChanged(visibility: Int) {
-        DebugLog.log("window visibility $visibility (reported as VISIBLE)")
-        super.onWindowVisibilityChanged(View.VISIBLE)
-    }
-
-    override fun onVisibilityChanged(changedView: View, visibility: Int) {
-        super.onVisibilityChanged(changedView, View.VISIBLE)
+        DebugLog.log("window visibility $visibility")
+        super.onWindowVisibilityChanged(visibility)
     }
 }

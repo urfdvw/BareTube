@@ -44,7 +44,6 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val ACTION_SIGN_IN = "io.github.urfdvw.baretube.SIGN_IN"
-        const val ACTION_SHARE_LOG = "io.github.urfdvw.baretube.SHARE_LOG"
         private val APP_URL = Uri.parse(BuildConfig.APP_URL)
         private val APP_ORIGIN = "${APP_URL.scheme}://${APP_URL.host}"
         private val YOUTUBE_ORIGINS = setOf("https://www.youtube.com", "https://www.youtube-nocookie.com")
@@ -52,12 +51,11 @@ class MainActivity : ComponentActivity() {
             "https://accounts.google.com/ServiceLogin?service=youtube&passive=true&continue=https%3A%2F%2Fm.youtube.com%2F"
 
         // Runs in every frame (including the YouTube embed) before page scripts,
-        // so players never see the page as hidden.
+        // so players never see the page as hidden and don't pause themselves.
         //
-        // With the screen off there is no vsync, so requestAnimationFrame stops firing
-        // even though the page is "visible"; the YouTube player then stops loading data
-        // and playback runs dry. When no real frame arrives within 100 ms, the callback
-        // is run from a timer instead, like a screen that is still on.
+        // Hidden pages get no animation frames, but the player believes it is
+        // visible and may wait for them; when no real frame arrives within 100 ms,
+        // the callback is run from a timer instead.
         private const val KEEP_VISIBLE_JS = """
             (function () {
               try {
@@ -255,7 +253,6 @@ class MainActivity : ComponentActivity() {
                 .launch(Manifest.permission.POST_NOTIFICATIONS)
         }
 
-        if (intent?.action == ACTION_SHARE_LOG) shareLog()
         when {
             intent?.action == ACTION_SIGN_IN -> startSignIn()
             savedInstanceState == null -> webView.loadUrl(BuildConfig.APP_URL)
@@ -266,18 +263,6 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         if (intent.action == ACTION_SIGN_IN) startSignIn()
-        if (intent.action == ACTION_SHARE_LOG) shareLog()
-    }
-
-    private fun shareLog() {
-        val info = "BareTube ${BuildConfig.VERSION_NAME}, Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT}), " +
-            "${Build.MANUFACTURER} ${Build.MODEL}, WebView ${WebViewCompat.getCurrentWebViewPackage(this)?.versionName}, " +
-            "battery optimization ignored=${powerManager.isIgnoringBatteryOptimizations(packageName)}\n\n"
-        val send = Intent(Intent.ACTION_SEND)
-            .setType("text/plain")
-            .putExtra(Intent.EXTRA_SUBJECT, "BareTube debug log")
-            .putExtra(Intent.EXTRA_TEXT, info + DebugLog.tail())
-        startActivity(Intent.createChooser(send, "Share debug log"))
     }
 
     private fun startSignIn() {

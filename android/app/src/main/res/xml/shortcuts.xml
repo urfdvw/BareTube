@@ -17,7 +17,7 @@
         android:shortcutShortLabel="@string/shortcut_share_log">
         <intent
             android:action="io.github.urfdvw.baretube.SHARE_LOG"
-            android:targetClass="io.github.urfdvw.baretube.MainActivity"
+            android:targetClass="io.github.urfdvw.baretube.ShareLogActivity"
             android:targetPackage="io.github.urfdvw.baretube" />
     </shortcut>
 </shortcuts>
