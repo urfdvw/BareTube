@@ -175,7 +175,7 @@ class MainActivity : ComponentActivity() {
                 addAction(Intent.ACTION_SCREEN_OFF)
                 addAction(Intent.ACTION_SCREEN_ON)
                 addAction(Intent.ACTION_USER_PRESENT)
-                addAction(Intent.ACTION_AUDIO_BECOMING_NOISY)
+                addAction(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
             },
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
