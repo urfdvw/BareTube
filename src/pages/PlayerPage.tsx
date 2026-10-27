@@ -3,6 +3,7 @@ const BackIcon = () => <svg viewBox="0 0 24 24" width="22" height="22" fill="cur
 import { useParams, useNavigate } from 'react-router-dom';
 import { getVideoDetails, getChannelDetails, ApiError, QuotaExceededError } from '../lib/youtubeApi';
 import type { Video, Channel } from '../lib/types';
+import { isAndroidApp, reportPlayback, type PlaybackState } from '../lib/android';
 
 const TS_REGEX = /\b(\d{1,2}:\d{2}(?::\d{2})?)\b/g;
 
@@ -37,6 +38,15 @@ export default function PlayerPage() {
   const [error, setError] = useState('');
   const [descExpanded, setDescExpanded] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const videoRef = useRef<Video | null>(null);
+  const playbackRef = useRef<PlaybackState | null>(null);
+
+  function postCommand(func: string, args: unknown[] = []) {
+    iframeRef.current?.contentWindow?.postMessage(
+      JSON.stringify({ event: 'command', func, args }),
+      'https://www.youtube.com'
+    );
+  }
 
   useEffect(() => {
     if (!videoId) return;
@@ -60,11 +70,55 @@ export default function PlayerPage() {
     })();
   }, [videoId]);
 
+  // Android app: forward player state to the native media notification and
+  // accept play/pause commands from it.
+  useEffect(() => {
+    videoRef.current = video;
+    if (isAndroidApp && playbackRef.current && playbackRef.current !== 'stopped' && video) {
+      reportPlayback(playbackRef.current, video.title, video.channelTitle, video.thumbnail);
+    }
+  }, [video]);
+
+  useEffect(() => {
+    if (!isAndroidApp) return;
+    function onMessage(e: MessageEvent) {
+      if (e.source !== iframeRef.current?.contentWindow) return;
+      let data;
+      try { data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data; } catch { return; }
+      let ytState: number | undefined;
+      if (data?.event === 'onStateChange') ytState = data.info;
+      else if (data?.event === 'infoDelivery' && typeof data.info?.playerState === 'number') ytState = data.info.playerState;
+      // 1 = playing, 3 = buffering, 2 = paused, 0 = ended
+      const state: PlaybackState | null =
+        ytState === 1 || ytState === 3 ? 'playing' : ytState === 2 || ytState === 0 ? 'paused' : null;
+      if (!state || state === playbackRef.current) return;
+      playbackRef.current = state;
+      const v = videoRef.current;
+      reportPlayback(state, v?.title ?? '', v?.channelTitle ?? '', v?.thumbnail ?? '');
+    }
+    window.addEventListener('message', onMessage);
+    window.__bareTubeMedia = (cmd) => postCommand(cmd === 'play' ? 'playVideo' : 'pauseVideo');
+    return () => {
+      window.removeEventListener('message', onMessage);
+      delete window.__bareTubeMedia;
+      playbackRef.current = null;
+      reportPlayback('stopped');
+    };
+  }, [videoId]);
+
+  // Ask the embed to start sending state events (YouTube iframe API handshake).
+  function handleIframeLoad() {
+    if (!isAndroidApp) return;
+    let tries = 0;
+    const timer = setInterval(() => {
+      const win = iframeRef.current?.contentWindow;
+      if (!win || playbackRef.current || ++tries > 20) { clearInterval(timer); return; }
+      win.postMessage(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), 'https://www.youtube.com');
+    }, 250);
+  }
+
   function seekTo(seconds: number) {
-    iframeRef.current?.contentWindow?.postMessage(
-      JSON.stringify({ event: 'command', func: 'seekTo', args: [seconds, true] }),
-      'https://www.youtube.com'
-    );
+    postCommand('seekTo', [seconds, true]);
   }
 
   function updateMediaSession(v: Video) {
@@ -91,6 +145,7 @@ export default function PlayerPage() {
           ref={iframeRef}
           className="player-iframe"
           src={`https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&enablejsapi=1`}
+          onLoad={handleIframeLoad}
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
           allowFullScreen
           title={video?.title ?? 'YouTube video'}

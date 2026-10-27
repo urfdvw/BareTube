@@ -34,6 +34,18 @@ If you have a subscription and are logged in to your YouTube account but are sti
 it is probably because you have anti-tracking features enabled, so your YouTube cookies are not visible to BareTube.
 Try turning that feature off in browser for BareTube.
 
+## Android App
+
+`android/` is a native wrapper around the hosted PWA. It uses the system WebView (no browser needed) and adds:
+
+- Background and lock-screen playback (foreground media service + notification / lock-screen play/pause)
+- Persistent YouTube login: Settings → YouTube Account → Sign In
+- Backup export / import through the Android file picker
+
+The APK is built by GitHub Actions (`.github/workflows/android.yml`) on every push touching `android/`; download it from the run's artifacts. To build locally with the Android SDK: `cd android && ./gradlew assembleRelease`.
+
+Android only installs an update over the existing app when both are signed with the same key; otherwise you must uninstall first and lose the login. To keep a fixed key, add these repository secrets: `BARETUBE_KEYSTORE_BASE64` (`base64 -w0 your.keystore`), `BARETUBE_KEYSTORE_PASSWORD`, `BARETUBE_KEY_ALIAS`. Without them CI signs with a throwaway debug key.
+
 ## API Quota
 
 The YouTube Data API v3 provides **10,000 free units per day**.

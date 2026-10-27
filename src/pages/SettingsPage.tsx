@@ -1,8 +1,9 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 const BackIcon = () => <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>;
 import { useNavigate } from 'react-router-dom';
 import { getApiKey, setApiKey, exportData, importData, resetQuota } from '../lib/storage';
 import QuotaIndicator from '../components/QuotaIndicator';
+import { isAndroidApp, saveFile, signIn, signOut, getSignedIn } from '../lib/android';
 
 export default function SettingsPage() {
   const navigate = useNavigate();
@@ -10,6 +11,16 @@ export default function SettingsPage() {
   const [importError, setImportError] = useState('');
   const [quotaRefresh, setQuotaRefresh] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [signedIn, setSignedIn] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (isAndroidApp) getSignedIn().then(setSignedIn);
+  }, []);
+
+  function handleSignOut() {
+    signOut();
+    setSignedIn(false);
+  }
 
   function handleKeyChange(value: string) {
     setKey(value);
@@ -17,6 +28,10 @@ export default function SettingsPage() {
   }
 
   function handleExport() {
+    if (isAndroidApp) {
+      saveFile('baretube-backup.json', 'application/json', exportData());
+      return;
+    }
     const blob = new Blob([exportData()], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -66,6 +81,18 @@ export default function SettingsPage() {
           autoComplete="off"
         />
       </section>
+
+      {isAndroidApp && (
+        <section className="settings-section">
+          <h3 className="settings-heading">YouTube Account</h3>
+          <p className="settings-hint">
+            {signedIn === null ? 'Checking…' : signedIn ? 'Signed in. The player uses your YouTube account.' : 'Not signed in.'}
+          </p>
+          {signedIn
+            ? <button className="secondary-btn" onClick={handleSignOut}>Sign Out</button>
+            : <button className="secondary-btn" onClick={signIn}>Sign In to YouTube</button>}
+        </section>
+      )}
 
       <section className="settings-section">
         <h3 className="settings-heading">API Quota</h3>
