@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">BareTube</string>
+    <string name="channel_playback">Playback</string>
+    <string name="play">Play</string>
+    <string name="pause">Pause</string>
+    <string name="close">Close</string>
+    <string name="shortcut_sign_in">Sign in to YouTube</string>
+    <string name="shortcut_share_log">Share debug log</string>
+</resources>
