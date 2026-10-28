@@ -175,6 +175,8 @@ class MainActivity : ComponentActivity() {
     private var mediaTitle = ""
     private var mediaArtwork = ""
     private lateinit var powerManager: PowerManager
+    private var offscreen: OffscreenRenderer? = null
+    private var stopped = false
 
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -230,6 +232,7 @@ class MainActivity : ComponentActivity() {
         setContentView(root)
 
         setUpWebView()
+        if (Build.VERSION.SDK_INT >= 29) offscreen = OffscreenRenderer(webView)
         PlaybackService.commandHandler = { cmd ->
             DebugLog.log("notification command $cmd")
             mediaReply?.postMessage(cmd)
@@ -425,6 +428,7 @@ class MainActivity : ComponentActivity() {
         if (state == "stopped") {
             mediaPlaying = false
             PlaybackService.stop()
+            updateOffscreen()
             return
         }
         val videoId = msg.optString("videoId")
@@ -433,6 +437,12 @@ class MainActivity : ComponentActivity() {
         mediaArtwork = if (videoId.isNotEmpty()) "https://i.ytimg.com/vi/$videoId/hqdefault.jpg" else ""
         PlaybackService.update(this, mediaPlaying, mediaTitle, "", mediaArtwork)
         if (mediaPlaying) askToIgnoreBatteryOptimizations()
+        updateOffscreen()
+    }
+
+    /** Draw the WebView ourselves only while it plays and the activity window doesn't. */
+    private fun updateOffscreen() {
+        if (stopped && mediaPlaying) offscreen?.start() else offscreen?.stop()
     }
 
     private fun askToIgnoreBatteryOptimizations() {
@@ -480,6 +490,8 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         DebugLog.log("activity onStart")
+        stopped = false
+        updateOffscreen()
     }
 
     override fun onResume() {
@@ -490,6 +502,8 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         DebugLog.log("activity onStop")
+        stopped = true
+        updateOffscreen()
     }
 
     override fun onTrimMemory(level: Int) {
@@ -509,6 +523,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         DebugLog.log("activity onDestroy")
+        offscreen?.stop()
         unregisterReceiver(screenReceiver)
         PlaybackService.commandHandler = null
         PlaybackService.stop()
